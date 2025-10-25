@@ -126,6 +126,5 @@ def main():
         return
     print(solve(lines))
 
-
 if __name__ == "__main__":
     main()
