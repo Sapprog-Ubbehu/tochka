@@ -2,135 +2,129 @@ import sys
 from collections import deque, defaultdict
 
 
-def solve(edges):
+def solve(edges: list[tuple[str, str]]) -> list[str]:
     graph = defaultdict(set)
     nodes = set()
+    res = []
 
     for u, v in edges:
         if not u or not v:
             continue
-
         graph[u].add(v)
         graph[v].add(u)
         nodes.add(u)
         nodes.add(v)
 
-    def is_gateway(node):
-        return node.isupper()
+    def gateway(x: str) -> bool:
+        return x.isupper()
 
-    gateways = {n for n in nodes if is_gateway(n)}
+    gateways = {n for n in nodes if gateway(n)}
 
     virus = "a"
     if virus not in nodes:
         return []
 
-    def bfs_with_parents(start):
+    def bfs(start: str, mode="all") -> dict[str, int]:
+        queue = deque([start])
         dist = {start: 0}
-        parent = {}
-        q = deque([start])
-        while q:
-            cur = q.popleft()
 
-            for neighbour in sorted(graph[cur]):
-                if neighbour not in dist:
-                    dist[neighbour] = dist[cur] + 1
-                    parent[neighbour] = cur
-                    q.append(neighbour)
-        return dist, parent
+        while queue:
+            cur = queue.popleft()
 
-    def find_nearest_gate(start):
-        dist, parent = bfs_with_parents(start)
-        reachable = [(g, dist[g]) for g in gateways if g in dist]
+            for nb in sorted(graph[cur]):
+                if mode == "lower" and not nb.islower():
+                    continue
+                if nb not in dist:
+                    dist[nb] = dist[cur] + 1
+                    queue.append(nb)
 
-        if not reachable:
-            return None, None, None, None
+        return dist
 
-        min_d = min(d for _, d in reachable)
-        candidates = sorted([g for g, d in reachable if d == min_d])
-        return candidates[0], min_d, dist, parent
+    def available_nodes(start: str) -> set[str]:
+        if start not in graph:
+            return set()
 
-    def rebuild_predposledniy_make_first_step(target, parent, start):
+        comp = set(bfs(start, "lower").keys())
+        return comp
 
-        path_rev = [target]
-        cur = target
+    def front_edges(comp: set[str]) -> list[tuple[str, str]]:
 
-        while cur != start:
-            if cur not in parent:
-                return None, start
-            cur = parent[cur]
-            path_rev.append(cur)
-
-        path = list(reversed(path_rev))
-
-        if len(path) < 2:
-            return None, start
-
-        predposl = path[-2]
-        first_step = path[1] if len(path) > 1 else start
-        return predposl, first_step
-
-    result = []
+        front = []
+        for u in sorted(comp):
+            for nb in sorted(graph[u]):
+                if gateway(nb):
+                    front.append((nb, u))
+        front = sorted(front)
+        return front
 
     while True:
-        chosen_gw, dist_to_gw, dist_map, parent_map = find_nearest_gate(virus)
-        if chosen_gw is None:
+        component = available_nodes(virus)
+        front = front_edges(component)
+
+        if not front:
             break
 
-        prepdosl, _ = rebuild_predposledniy_make_first_step(chosen_gw, parent_map, virus)
+        virus_incident = [e for e in front if e[1] == virus]
+        candidates = virus_incident if virus_incident else front
 
-        off_edge_gw = chosen_gw
-        off_edge_node = prepdosl
+        cut_gw, cut_node = min(candidates)
 
-        if off_edge_node is None or off_edge_node not in graph.get(off_edge_gw, set()) or off_edge_gw not in graph.get(
-                off_edge_node, set()):
+        if cut_node in graph.get(cut_gw, set()):
+            graph[cut_gw].remove(cut_node)
 
-            candidates = []
+        if cut_gw in graph.get(cut_node, set()):
+            graph[cut_node].remove(cut_gw)
 
-            for g in sorted(gateways):
-                for n in sorted(graph.get(g, set())):
-                    if not is_gateway(n):
-                        candidates.append((g, n))
+        res.append(f"{cut_gw}-{cut_node}")
 
-            if not candidates:
-                break
-
-            off_edge_gw, off_edge_node = candidates[0]
-
-        if off_edge_node in graph.get(off_edge_gw, set()):
-            graph[off_edge_gw].remove(off_edge_node)
-
-        if off_edge_gw in graph.get(off_edge_node, set()):
-            graph[off_edge_node].remove(off_edge_gw)
-
-        result.append(f"{off_edge_gw}-{off_edge_node}")
-
-        chosen_gw_after, _, _, parent_after = find_nearest_gate(virus)
-
-        if not chosen_gw_after:
+        comp_after = available_nodes(virus)
+        front_after = front
+        if not front_after:
             break
 
-        predposl_after, first_step_after = rebuild_predposledniy_make_first_step(chosen_gw_after, parent_after, virus)
-
-        if first_step_after is None:
+        dist_from_virus = bfs(virus)
+        reachable_gates = [g for g in gateways if g in dist_from_virus]
+        if not reachable_gates:
             break
 
-        virus = first_step_after
+        min_dist = min(dist_from_virus[g] for g in reachable_gates)
+        candidate_gates = sorted([g for g in reachable_gates if dist_from_virus[g] == min_dist])
+        target_gate = candidate_gates[0]
 
-    return result
+        go = bfs(target_gate)
+
+        future_moves = []
+        for nb in sorted(graph[virus]):
+            if not nb.islower():
+                continue
+
+            dv = go.get(virus, None)
+            dn = go.get(nb, None)
+            if dv is None or dn is None:
+                continue
+            if dn == dv - 1:
+                future_moves.append(nb)
+
+        if future_moves:
+            virus = min(future_moves)
+        else:
+            break
+
+    return res
 
 
-def main():
-    edges = []
+def main() -> None:
+
+    edges: list[tuple[str, str]] = []
     for line in sys.stdin:
         line = line.strip()
-        if line:
-            node1, sep, node2 = line.partition('-')
-            if sep:
-                edges.append((node1, node2))
-
-    result = solve(edges)
-    for edge in result:
-        print(edge)
+        if not line:
+            continue
+        node1, sep, node2 = line.partition('-')
+        if sep:
+            edges.append((node1, node2))
+    for cut in solve(edges):
+        print(cut)
 
 
 if __name__ == "__main__":
